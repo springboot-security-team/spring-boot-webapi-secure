@@ -71,21 +71,35 @@ jobs:
           with open("semgrep-report.json", encoding="utf-8") as file:
               report = json.load(file)
 
-          blocking_findings = [
+          findings = report.get("results", [])
+
+          error_findings = [
               finding
-              for finding in report.get("results", [])
+              for finding in findings
               if finding.get("extra", {}).get("severity") == "ERROR"
           ]
 
-          print(f"Hallazgos con severidad ERROR: {len(blocking_findings)}")
+          warning_findings = [
+              finding
+              for finding in findings
+              if finding.get("extra", {}).get("severity") == "WARNING"
+          ]
 
-          for finding in blocking_findings:
-              rule = finding.get("check_id", "sin-regla")
-              path = finding.get("path", "sin-ruta")
-              line = finding.get("start", {}).get("line", "?")
-              print(f"- {rule} -> {path}:{line}")
+          print(f"Hallazgos totales: {len(findings)}")
+          print(f"Hallazgos ERROR: {len(error_findings)}")
+          print(f"Hallazgos WARNING: {len(warning_findings)}")
+          print("")
 
-          if blocking_findings:
+          if error_findings:
+              print("Hallazgos que bloquean el Quality Gate:")
+
+              for finding in error_findings:
+                  rule = finding.get("check_id", "sin-regla")
+                  path = finding.get("path", "sin-ruta")
+                  line = finding.get("start", {}).get("line", "?")
+                  print(f"- {rule} -> {path}:{line}")
+
+              print("")
               print("El Quality Gate SAST ha sido bloqueado.")
               sys.exit(1)
 
