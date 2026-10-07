@@ -28,12 +28,12 @@ env:
 jobs:
   container-trivy:
     name: Construccion de imagen y escaneo con Trivy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
       - name: Descargar codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Construir imagen del proyecto
         run: |
@@ -63,7 +63,7 @@ jobs:
           } | tee reports/imagen-version.txt
 
       - name: Publicar imagen del contenedor
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: imagen-contenedor
           path: |
@@ -91,7 +91,7 @@ jobs:
 
       - name: Publicar reporte de Trivy
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: trivy-reports
           path: |

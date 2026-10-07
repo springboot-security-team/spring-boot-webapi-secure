@@ -103,6 +103,8 @@
             </plugin>
             <!-- CycloneDX BOM Generator -->
             <plugin>
+                <!-- El IDE (m2e) omite la ejecucion heredada del parent; Maven y el CI la ejecutan igual -->
+                <?m2e ignore?>
                 <groupId>org.cyclonedx</groupId>
                 <artifactId>cyclonedx-maven-plugin</artifactId>
                 <version>2.9.3</version>
