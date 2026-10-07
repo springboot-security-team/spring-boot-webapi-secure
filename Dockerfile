@@ -1,36 +1,35 @@
-# ---- Build stage ----
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# ---- Etapa de construccion ----
+# El repositorio no incluye Maven Wrapper (mvnw), por eso se usa una imagen con Maven.
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /app
 
-# Copy Maven wrapper & pom first (better layer caching)
-COPY mvnw .
-COPY .mvn .mvn
+# Copiar primero el pom para cachear las dependencias mientras no cambie
 COPY pom.xml .
+RUN mvn -B -q dependency:go-offline
 
-# Download dependencies (cached unless pom changes)
-RUN ./mvnw dependency:go-offline -B
-
-# Copy source and build
+# Copiar el codigo fuente y empaquetar (las pruebas se ejecutan en el job de CI)
 COPY src src
-RUN ./mvnw package -DskipTests -B
+RUN mvn -B -q package -DskipTests \
+    && cp target/*.jar app.jar
 
-# ---- Runtime stage ----
-FROM eclipse-temurin:21-jdk-alpine
+# ---- Etapa de ejecucion ----
+# Solo JRE: la imagen final no necesita compilador ni herramientas del JDK
+FROM eclipse-temurin:21-jre-alpine
 
-# Security: run as non-root user
-RUN groupadd -r spring && useradd -r -g spring spring
+# Seguridad: ejecutar con un usuario sin privilegios (comandos de Alpine/BusyBox)
+RUN addgroup -S spring && adduser -S -G spring -H -s /sbin/nologin spring
+
+WORKDIR /app
+
+# Copiar solo el jar ejecutable, propiedad de root y de solo lectura para la app
+COPY --from=builder --chown=root:root --chmod=0444 /app/app.jar app.jar
+
 USER spring:spring
 
-WORKDIR /app
-
-# Copy only the fat jar
-COPY --from=builder /app/target/*.jar app.jar
-
-# Optional: expose actuator / app port
 EXPOSE 8080
 
-# Health check (adjust path if needed)
+# Alpine no trae curl; wget de BusyBox esta disponible en la imagen base
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
+  CMD wget -q -O /dev/null http://localhost:8080/actuator/health || exit 1
 
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
