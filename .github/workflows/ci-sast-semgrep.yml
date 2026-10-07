@@ -1,0 +1,108 @@
+name: CI - SAST con Semgrep
+run-name: SAST de ${{ github.ref_name }} por ${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
+
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  sast-semgrep:
+    name: Analisis SAST con Semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    container:
+      image: semgrep/semgrep:1.179.0
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Registrar version de Semgrep
+        run: semgrep --version | tee semgrep-version.txt
+
+      - name: Ejecutar analisis SAST
+        id: semgrep-scan
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --config .semgrep.yml \
+            --metrics=off \
+            --json \
+            --output semgrep-report.json \
+            src/main/java
+
+      - name: Publicar reporte SAST
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-reports
+          path: |
+            semgrep-report.json
+            semgrep-version.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Validar ejecucion de Semgrep
+        if: steps.semgrep-scan.outcome == 'failure'
+        run: |
+          echo "Semgrep no pudo completar correctamente el analisis."
+          exit 1
+
+      - name: Aplicar criterio de bloqueo
+        if: steps.semgrep-scan.outcome == 'success'
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+
+          with open("semgrep-report.json", encoding="utf-8") as file:
+              report = json.load(file)
+
+          findings = report.get("results", [])
+
+          error_findings = [
+              finding
+              for finding in findings
+              if finding.get("extra", {}).get("severity") == "ERROR"
+          ]
+
+          warning_findings = [
+              finding
+              for finding in findings
+              if finding.get("extra", {}).get("severity") == "WARNING"
+          ]
+
+          print(f"Hallazgos totales: {len(findings)}")
+          print(f"Hallazgos ERROR: {len(error_findings)}")
+          print(f"Hallazgos WARNING: {len(warning_findings)}")
+          print("")
+
+          if error_findings:
+              print("Hallazgos que bloquean el Quality Gate:")
+
+              for finding in error_findings:
+                  rule = finding.get("check_id", "sin-regla")
+                  path = finding.get("path", "sin-ruta")
+                  line = finding.get("start", {}).get("line", "?")
+                  print(f"- {rule} -> {path}:{line}")
+
+              print("")
+              print("El Quality Gate SAST ha sido bloqueado.")
+              sys.exit(1)
+
+          print("El Quality Gate SAST ha sido superado.")
+          PY
+          
