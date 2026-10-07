@@ -1,0 +1,107 @@
+name: CI - Imagen y escaneo con Trivy
+run-name: Imagen de ${{ github.ref_name }} por ${{ github.actor }}
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
+
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: springboot-devsecops-lab
+  IMAGE_TAG: ${{ github.sha }}
+  TRIVY_IMAGE: aquasec/trivy:0.74.0
+  # Cantidad de vulnerabilidades CRITICAL en librerias que bloquea el pipeline
+  QG_UMBRAL_CRITICAL_LIBRERIAS: 3
+
+jobs:
+  container-trivy:
+    name: Construccion de imagen y escaneo con Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Descargar codigo
+        uses: actions/checkout@v4
+
+      - name: Construir imagen del proyecto
+        run: |
+          docker build \
+            --label org.opencontainers.image.revision=${{ github.sha }} \
+            --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
+            -t "$IMAGE_NAME:$IMAGE_TAG" .
+
+      - name: Registrar version de la imagen
+        run: |
+          mkdir -p reports
+          {
+            echo "commit=${{ github.sha }}"
+            echo "imagen=$IMAGE_NAME:$IMAGE_TAG"
+            echo "image_id=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:$IMAGE_TAG")"
+            echo "run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } | tee reports/imagen-version.txt
+
+      - name: Exportar imagen para despliegue local
+        run: docker save "$IMAGE_NAME:$IMAGE_TAG" | gzip > "$IMAGE_NAME-$IMAGE_TAG.tar.gz"
+
+      - name: Publicar imagen del contenedor
+        uses: actions/upload-artifact@v4
+        with:
+          name: imagen-contenedor
+          path: |
+            ${{ env.IMAGE_NAME }}-${{ env.IMAGE_TAG }}.tar.gz
+            reports/imagen-version.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Ejecutar escaneo de imagen con Trivy
+        id: trivy-scan
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$GITHUB_WORKSPACE/reports:/reports" \
+            -v "$RUNNER_TEMP/trivy-cache:/root/.cache/trivy" \
+            "$TRIVY_IMAGE" image \
+            --scanners vuln \
+            --exit-code 0 \
+            --format json \
+            --output /reports/trivy-report.json \
+            "$IMAGE_NAME:$IMAGE_TAG"
+          docker run --rm "$TRIVY_IMAGE" --version | tee reports/trivy-version.txt
+
+      - name: Publicar reporte de Trivy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-reports
+          path: |
+            reports/trivy-report.json
+            reports/trivy-version.txt
+            reports/imagen-version.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Validar ejecucion de Trivy
+        if: steps.trivy-scan.outcome == 'failure'
+        run: |
+          echo "Trivy no pudo completar correctamente el analisis."
+          exit 1
+
+      - name: Aplicar Quality Gate de librerias criticas
+        if: steps.trivy-scan.outcome == 'success'
+        run: |
+          python3 .github/scripts/quality_gate_trivy.py reports/trivy-report.json \
+            --umbral "$QG_UMBRAL_CRITICAL_LIBRERIAS"
