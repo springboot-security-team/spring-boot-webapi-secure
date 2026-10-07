@@ -42,18 +42,25 @@ jobs:
             --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }} \
             -t "$IMAGE_NAME:$IMAGE_TAG" .
 
+      - name: Exportar imagen para despliegue local
+        run: docker save "$IMAGE_NAME:$IMAGE_TAG" | gzip > "$IMAGE_NAME-$IMAGE_TAG.tar.gz"
+
+      # El digest de configuracion se toma del archivo exportado: identifica la
+      # imagen igual en el runner y en el equipo local, sin depender del almacen de Docker
       - name: Registrar version de la imagen
         run: |
+          ARCHIVO="$IMAGE_NAME-$IMAGE_TAG.tar.gz"
+          CONFIG_DIGEST=$(gzip -dc "$ARCHIVO" | tar -xO manifest.json \
+            | python3 -c 'import json,sys; print("sha256:" + json.load(sys.stdin)[0]["Config"].split("/")[-1].removesuffix(".json"))')
           mkdir -p reports
           {
             echo "commit=${{ github.sha }}"
             echo "imagen=$IMAGE_NAME:$IMAGE_TAG"
-            echo "image_id=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:$IMAGE_TAG")"
+            echo "image_config_digest=$CONFIG_DIGEST"
+            echo "archivo=$ARCHIVO"
+            echo "archivo_sha256=$(sha256sum "$ARCHIVO" | cut -d' ' -f1)"
             echo "run=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           } | tee reports/imagen-version.txt
-
-      - name: Exportar imagen para despliegue local
-        run: docker save "$IMAGE_NAME:$IMAGE_TAG" | gzip > "$IMAGE_NAME-$IMAGE_TAG.tar.gz"
 
       - name: Publicar imagen del contenedor
         uses: actions/upload-artifact@v4
