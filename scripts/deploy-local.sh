@@ -28,7 +28,9 @@ elif [[ -n "${1:-}" ]]; then
   DIR="dist/run-$1"
   rm -rf "$DIR"
   echo ">> Descargando artifact '$ARTIFACT' de la ejecucion $1"
-  gh run download "$1" --name "$ARTIFACT" --dir "$DIR"
+  # El repositorio se toma del remoto origin: gh no exige "gh repo set-default"
+  REPO=$(git remote get-url origin | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##')
+  gh run download "$1" --repo "$REPO" --name "$ARTIFACT" --dir "$DIR"
 else
   sed -n '3,7p' "$0"
   exit 1
