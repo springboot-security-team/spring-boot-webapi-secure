@@ -1,0 +1,17 @@
+# Despliegue local de la imagen construida en GitHub Actions.
+# IMAGE_TAG es el SHA del commit; lo define scripts/deploy-local.sh.
+services:
+  app:
+    image: springboot-devsecops-lab:${IMAGE_TAG:?Definir IMAGE_TAG con el SHA del commit}
+    container_name: springboot-devsecops-lab
+    # Solo en localhost: la aplicacion es deliberadamente vulnerable
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

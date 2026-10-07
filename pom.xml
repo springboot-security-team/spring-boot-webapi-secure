@@ -91,7 +91,8 @@
                 <version>11.1.1</version>
                 <configuration>
                     <failBuildOnCVSS>7</failBuildOnCVSS>
-                    <nvdApiKey>05028C6D-2870-4358-A719-5424DDA781B3</nvdApiKey>
+                    <!-- La API key se lee del entorno (secret NVD_API_KEY en GitHub Actions) -->
+                    <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
                 </configuration>
             </plugin>
             <!-- SpotBugs -->
@@ -102,6 +103,8 @@
             </plugin>
             <!-- CycloneDX BOM Generator -->
             <plugin>
+                <!-- El IDE (m2e) omite la ejecucion heredada del parent; Maven y el CI la ejecutan igual -->
+                <?m2e ignore?>
                 <groupId>org.cyclonedx</groupId>
                 <artifactId>cyclonedx-maven-plugin</artifactId>
                 <version>2.9.3</version>
